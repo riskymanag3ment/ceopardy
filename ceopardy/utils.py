@@ -15,8 +15,10 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
+import csv
 import glob
 import html
+import io
 import os
 import re
 
@@ -135,6 +137,114 @@ def question_to_html(question_text):
     question_text = re.sub(r"\n", "<br/>", question_text)
 
     return "<p>" + question_text + "</p>"
+
+
+def parse_questions_csv(file_stream):
+    """Parse a spreadsheet-style CSV covering one or more rounds, plus an
+    optional Final Jeopardy row.
+
+    Expected shape (the header row is cosmetic and ignored):
+        round, category,    100,          200, ...
+        1,     Category A,  question 1,   question 2, ...
+        1,     Category B,  ...
+        2,     Category C,  ...
+        final, Final Cat.,  Final question text
+
+    Rows sharing the same "round" value must be grouped together (in the
+    order they should be played) and each round needs exactly
+    CATEGORIES_PER_GAME rows of QUESTIONS_PER_CATEGORY questions. Prefix a
+    cell with "[dbl]" to mark it a Daily Double (same convention as the
+    plain-text question format). At most one "final" row is allowed
+    (case-insensitive in the round column), attached to whichever round is
+    played last.
+
+    Returns (rounds, final):
+      rounds: [{category_name: [q1, q2, ...]}, ...], one dict per round in
+              the order rounds first appear in the sheet.
+      final: {"category": ..., "question": ...} or None.
+    """
+    text = io.TextIOWrapper(file_stream, encoding="utf-8-sig")
+    rows = [row for row in csv.reader(text) if any(cell.strip() for cell in row)]
+    if not rows:
+        raise QuestionParsingError("The CSV file is empty")
+
+    data_rows = rows[1:]  # first row is a header, purely for the author's benefit
+    expected_cols = 2 + config["QUESTIONS_PER_CATEGORY"]
+
+    round_order = []
+    rounds = {}
+    seen_categories = set()
+    final = None
+
+    for i, raw_row in enumerate(data_rows, start=2):  # +2: 1-indexed, header consumed
+        row = [c.strip() for c in raw_row]
+
+        if row[0].lower() == "final":
+            if final is not None:
+                raise QuestionParsingError(f"Row {i}: only one 'final' row is allowed")
+            if len(row) < 3 or not row[1] or not row[2]:
+                raise QuestionParsingError(
+                    f"Row {i}: a 'final' row needs a category and a question"
+                )
+            final = {"category": row[1], "question": row[2]}
+            continue
+
+        if len(row) != expected_cols:
+            raise QuestionParsingError(
+                f"Row {i}: expected {expected_cols} columns (round, category + "
+                f"{config['QUESTIONS_PER_CATEGORY']} questions), got {len(row)}"
+            )
+        round_label, category = row[0], row[1]
+        if not round_label:
+            raise QuestionParsingError(f"Row {i}: missing round number")
+        if not category:
+            raise QuestionParsingError(f"Row {i}: missing category name")
+        if category in seen_categories:
+            raise QuestionParsingError(
+                f"Row {i}: duplicate category '{category}' (category names must be "
+                "unique across the whole sheet, even across different rounds)"
+            )
+        questions = row[2:]
+        if any(not q for q in questions):
+            raise QuestionParsingError(f"Row {i} ({category}): a question cell is empty")
+
+        if round_label not in rounds:
+            round_order.append(round_label)
+            rounds[round_label] = {}
+        seen_categories.add(category)
+        rounds[round_label][category] = questions
+
+    expected_categories = config["CATEGORIES_PER_GAME"]
+    for label in round_order:
+        count = len(rounds[label])
+        if count != expected_categories:
+            raise QuestionParsingError(
+                f"Round '{label}': expected {expected_categories} categories, found {count}"
+            )
+
+    return [rounds[label] for label in round_order], final
+
+
+def write_questions_cp(base_dir, filename, categories):
+    """Serialize {category: [q1, q2, ...]} to the plain-text question format."""
+    path = os.path.join(base_dir, "data", filename)
+    with open(path, "w") as f:
+        for category, questions in categories.items():
+            f.write(">{}\n".format(category))
+            for q in questions:
+                # Preserve literal newlines using the existing "\n" escape.
+                f.write("{}\n".format(q.replace("\n", "\\n")))
+            f.write("\n")
+
+
+def write_roundfile(base_dir, filename, category_names, final):
+    """Serialize a round's category order (+ optional final) to a .round file."""
+    path = os.path.join(base_dir, "data", filename)
+    with open(path, "w") as f:
+        for name in category_names:
+            f.write("{}\n".format(name))
+        if final is not None:
+            f.write("final: [{}] {}\n".format(final["category"], final["question"]))
 
 
 def list_roundfiles():

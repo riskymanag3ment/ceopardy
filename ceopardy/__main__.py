@@ -23,13 +23,19 @@ from importlib import resources
 
 
 def _cmd_serve(args):
-    from ceopardy import app, create_app, socketio
+    from ceopardy import HOST_PASSWORD, app, create_app, socketio
 
-    # WARNING: This app is not ready to be exposed on the network.
-    #          Game host interface would be exposed.
     create_app()
     debug = getattr(args, "debug", False)
-    host, port = "127.0.0.1", 5000
+    host, port = args.host, args.port
+    exposed = host not in ("127.0.0.1", "localhost")
+    if exposed and not HOST_PASSWORD:
+        print(
+            "WARNING: binding to a non-loopback address without "
+            "CEOPARDY_HOST_PASSWORD set. The host interface (game control) "
+            "will be reachable by anyone who can reach this address, with "
+            "no authentication. Set CEOPARDY_HOST_PASSWORD to protect it."
+        )
     print(f"Ceopardy serving on http://{host}:{port}/")
     print(f"  Viewer: http://localhost:{port}/")
     print(f"  Host:   http://localhost:{port}/host")
@@ -95,6 +101,20 @@ def main(argv=None):
         "--debug",
         action="store_true",
         help="Enable Flask debug mode (verbose logging + auto-reload).",
+    )
+    serve.add_argument(
+        "--port",
+        type=int,
+        default=5000,
+        help="Port to listen on (default: 5000).",
+    )
+    serve.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help=(
+            "Address to bind to (default: 127.0.0.1). Use 0.0.0.0 to expose "
+            "beyond localhost -- set CEOPARDY_HOST_PASSWORD first."
+        ),
     )
     sub.add_parser(
         "init",

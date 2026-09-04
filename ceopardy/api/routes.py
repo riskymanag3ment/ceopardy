@@ -25,6 +25,7 @@ namespace for broadcast events.
 """
 
 import random
+import re
 
 from flask import Blueprint, jsonify, request
 from flask import current_app as app
@@ -56,8 +57,11 @@ def _public_config():
     """Subset of config safe to expose to the front-end."""
     keys = (
         "NB_TEAMS",
+        "MIN_TEAMS",
+        "MAX_TEAMS",
         "VARIABLE_TEAMS",
         "CATEGORIES_PER_GAME",
+        "MAX_ROUNDS",
         "QUESTIONS_PER_CATEGORY",
         "SCORE_TICK",
         "DAILYDOUBLE_WAIGER_MIN",
@@ -109,6 +113,28 @@ def _questions_payload(controller):
     return out
 
 
+def _final_payload(controller):
+    """Final Jeopardy status. None if this round has no final question.
+
+    Wager amounts are never included here (nor broadcast anywhere) so the
+    shared viewer screen can't spoil them for other teams -- they only ever
+    show up implicitly, as a score change, when the host judges a team.
+    """
+    if not controller.is_final_question():
+        return None
+    stage = controller.get_state("final") or ""  # "" | "wager" | "revealed"
+    payload = {
+        "active": stage != "",
+        "stage": stage or None,
+        "wagered": list(controller.get_final_wagers().keys()) if stage else [],
+        "judged": controller.get_final_judged_teams(),
+    }
+    if stage in ("wager", "revealed"):
+        q = controller.get_final_question_payload()
+        payload["category"] = q["category"] if q else None
+    return payload
+
+
 def _full_state_payload():
     controller = _controller()
     initialized = controller.is_game_initialized()
@@ -130,11 +156,13 @@ def _full_state_payload():
     }
 
     if initialized:
+        data["round"] = controller.get_current_round()
         data["teams"] = _teams_payload(controller)
         data["categories"] = controller.get_categories()
         data["questions"] = _questions_payload(controller)
         data["state"] = controller.get_complete_state()
         data["active_question"] = controller.get_active_question()
+        data["final"] = _final_payload(controller)
 
         # Daily-double waiger range for the team currently in control (if any).
         # Always report a usable range so the host slider is interactive even
@@ -158,6 +186,7 @@ def _full_state_payload():
         data["questions"] = {}
         data["state"] = controller.get_complete_state()
         data["active_question"] = {}
+        data["final"] = None
         data["dailydouble_range"] = {
             "min": config.get("DAILYDOUBLE_WAIGER_MIN", 0),
             "max": config.get("DAILYDOUBLE_WAIGER_MAX_MIN", 0),
@@ -199,6 +228,56 @@ def list_roundfiles():
     return jsonify(utils.list_roundfiles())
 
 
+@api_bp.route("/roundfiles/import", methods=["POST"])
+def import_roundfile():
+    """Import one or more rounds (+ optional final) from a spreadsheet-style
+    CSV export (multipart upload).
+
+    Writes a dedicated data/Questions-<slug>.cp shared by all rounds in this
+    sheet, plus one data/<slug>-round<N>.round per round -- never touches
+    the shared Questions.cp, so importing can't collide with or corrupt any
+    hand-edited content. Re-uploading the same name replaces those rounds.
+    The final question (if any) is attached to the last round in the sheet.
+    """
+    name = (request.form.get("name") or "").strip()
+    file = request.files.get("file")
+    if not name:
+        return jsonify(result="failure", error="Missing round name"), 400
+    if file is None or file.filename == "":
+        return jsonify(result="failure", error="Missing CSV file"), 400
+
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", name).strip("-").lower()
+    if not slug:
+        return (
+            jsonify(result="failure", error="Please use letters or numbers in the round name"),
+            400,
+        )
+
+    try:
+        rounds, final = utils.parse_questions_csv(file.stream)
+    except QuestionParsingError as e:
+        return jsonify(result="failure", error=str(e)), 400
+
+    all_categories = {}
+    for r in rounds:
+        all_categories.update(r)
+
+    q_filename = "Questions-{}.cp".format(slug)
+    utils.write_questions_cp(config["BASE_DIR"], q_filename, all_categories)
+
+    roundfile_names = []
+    for idx, r in enumerate(rounds, start=1):
+        roundfile_name = "{}-round{}.round".format(slug, idx)
+        is_last = idx == len(rounds)
+        utils.write_roundfile(
+            config["BASE_DIR"], roundfile_name, r.keys(), final if is_last else None
+        )
+        roundfile_names.append(roundfile_name)
+
+    app.logger.info("Imported %d round(s) from CSV as '%s': %s", len(rounds), slug, roundfile_names)
+    return jsonify(result="success", roundfiles=roundfile_names)
+
+
 # ---------------------------------------------------------------------------
 # Game lifecycle
 # ---------------------------------------------------------------------------
@@ -214,12 +293,27 @@ def init_game():
             return jsonify(result="failure", error="Missing round file name"), 400
         app.logger.info("New game requested with round file: %s", roundfile)
 
+        nb_teams = data.get("nb_teams", config["NB_TEAMS"])
+        try:
+            nb_teams = int(nb_teams)
+        except (TypeError, ValueError):
+            return jsonify(result="failure", error="Invalid team count"), 400
+        if not (config["MIN_TEAMS"] <= nb_teams <= config["MAX_TEAMS"]):
+            return (
+                jsonify(
+                    result="failure",
+                    error=(
+                        f"Team count must be between "
+                        f"{config['MIN_TEAMS']} and {config['MAX_TEAMS']}"
+                    ),
+                ),
+                400,
+            )
+
         if controller.is_game_initialized():
             controller.db_backup_and_create_new()
 
-        teamnames = {
-            "team{}".format(i): "Team {}".format(i) for i in range(1, config["NB_TEAMS"] + 1)
-        }
+        teamnames = {"team{}".format(i): "Team {}".format(i) for i in range(1, nb_teams + 1)}
         try:
             controller.setup_teams(teamnames)
             controller.setup_questions(roundfile)
@@ -230,6 +324,20 @@ def init_game():
 
     elif action == "resume":
         controller.resume_game()
+
+    elif action == "next_round":
+        roundfile = data.get("name")
+        if not roundfile:
+            return jsonify(result="failure", error="Missing round file name"), 400
+        app.logger.info("Next round requested with round file: %s", roundfile)
+        try:
+            controller.start_next_round(roundfile)
+        except GameProblem as e:
+            return jsonify(result="failure", error=str(e)), 400
+        except (GamefileParsingError, QuestionParsingError):
+            app.logger.exception("Next round error!")
+            return jsonify(result="failure", error="Next round error!"), 500
+
     else:
         return jsonify(result="failure", error="Unknown action"), 400
 
@@ -253,22 +361,117 @@ def init_game():
 @api_bp.route("/finish", methods=["POST"])
 def finish():
     controller = _controller()
-    if controller.is_final_question():
-        # TODO: final round is not implemented yet - keep parity with legacy behavior.
-        pass
-    else:
-        text = "<p>That's all folks! Thanks for playing!</p>"
-        # Clear any active question / DD before showing the end-of-game
-        # overlay, otherwise stale ui_state can resurrect the DD card on the
-        # viewer the next time it loads.
-        controller.set_state("question", "")
-        controller.end_dailydouble()
-        controller.set_state("overlay-question", text)
-        controller.set_state("overlay-big", text)
-        controller.finish_game()
-        app.socketio.emit("dailydouble-wager", {"team": None, "amount": None}, namespace=GAME_NS)
-        app.socketio.emit("question-hide", {}, namespace=GAME_NS)
-        app.socketio.emit("overlay-big", {"id": "final", "html": text}, namespace=GAME_NS)
+    text = "<p>That's all folks! Thanks for playing!</p>"
+    # Clear any active question / DD / Final Jeopardy before showing the
+    # end-of-game overlay, otherwise stale ui_state can resurrect a stale
+    # card on the viewer the next time it loads.
+    controller.set_state("question", "")
+    controller.end_dailydouble()
+    controller.end_final()
+    controller.set_state("overlay-question", text)
+    controller.set_state("overlay-big", text)
+    controller.finish_game()
+    app.socketio.emit("dailydouble-wager", {"team": None, "amount": None}, namespace=GAME_NS)
+    app.socketio.emit("question-hide", {}, namespace=GAME_NS)
+    app.socketio.emit("overlay-big", {"id": "final", "html": text}, namespace=GAME_NS)
+    _broadcast_state()
+    return jsonify(result="success")
+
+
+# ---------------------------------------------------------------------------
+# Final Jeopardy
+# ---------------------------------------------------------------------------
+@api_bp.route("/final/start", methods=["POST"])
+def final_start():
+    """Enter Final Jeopardy: reveal the category, open wagers."""
+    controller = _controller()
+    try:
+        controller.start_final_round()
+    except GameProblem as e:
+        return jsonify(result="failure", error=str(e)), 400
+
+    q = controller.get_final_question_payload()
+    category = q["category"] if q else None
+    content = "<p><b>Final Jeopardy!</b></p><p>Category: {}</p>".format(category)
+    controller.set_state("overlay-big", content)
+    controller.set_state("question", "")
+    app.socketio.emit("overlay-big", {"id": "final-category", "html": content}, namespace=GAME_NS)
+    app.socketio.emit("question-hide", {}, namespace=GAME_NS)
+    _broadcast_state()
+    return jsonify(result="success", category=category)
+
+
+@api_bp.route("/final/wager", methods=["POST"])
+def final_wager():
+    """Record one team's secret wager (never broadcast to the shared screen)."""
+    controller = _controller()
+    data = request.get_json(force=True, silent=True) or {}
+    tid = data.get("tid")
+    amount = data.get("amount")
+    if not tid or amount is None:
+        return jsonify(result="failure", error="Missing tid or amount"), 400
+    try:
+        amount = int(amount)
+    except (TypeError, ValueError):
+        return jsonify(result="failure", error="Invalid amount"), 400
+    try:
+        controller.set_final_wager(tid, amount)
+    except (GameProblem, UnknownTeamError) as e:
+        return jsonify(result="failure", error=str(e)), 400
+
+    _broadcast_state()
+    return jsonify(result="success", wagered=list(controller.get_final_wagers().keys()))
+
+
+@api_bp.route("/final/reveal", methods=["POST"])
+def final_reveal():
+    """Reveal the final question itself, after wagers are locked in."""
+    controller = _controller()
+    try:
+        controller.reveal_final_question()
+    except GameProblem as e:
+        return jsonify(result="failure", error=str(e)), 400
+
+    q = controller.get_final_question_payload()
+    content = q["text"] if q else ""
+    controller.set_state("overlay-big", content)
+    app.socketio.emit("overlay-big", {"id": "final-question", "html": content}, namespace=GAME_NS)
+    _broadcast_state()
+    return jsonify(result="success", question=q)
+
+
+@api_bp.route("/final/answer", methods=["POST"])
+def final_answer():
+    """Judge one team's Final Jeopardy answer, applying their locked wager."""
+    controller = _controller()
+    data = request.get_json(force=True, silent=True) or {}
+    tid = data.get("tid")
+    correct = bool(data.get("correct"))
+    if not tid:
+        return jsonify(result="failure", error="Missing tid"), 400
+    try:
+        controller.answer_final(tid, correct)
+    except GameProblem as e:
+        return jsonify(result="failure", error=str(e)), 400
+
+    _broadcast_state()
+    _broadcast_board_update()
+    return jsonify(result="success")
+
+
+@api_bp.route("/final/cancel", methods=["POST"])
+def final_cancel():
+    """Back out of Final Jeopardy and return to the board -- doesn't end the
+    game. Covers starting it by mistake, or a restart leaving the host
+    stuck on the wager/reveal screen with no way back."""
+    controller = _controller()
+    try:
+        controller.cancel_final_round()
+    except GameProblem as e:
+        return jsonify(result="failure", error=str(e)), 400
+
+    controller.set_state("overlay-big", "")
+    app.socketio.emit("overlay-big", {"id": "", "html": ""}, namespace=GAME_NS)
     _broadcast_state()
     return jsonify(result="success")
 
@@ -374,6 +577,7 @@ def question_select():
 
         controller.set_state("question", qid)
         controller.set_state("dailydouble", "enabled")
+        controller.set_state("answer-revealed", "")
 
         # Hide any previous question overlay, show the daily-double animation.
         app.socketio.emit("question-hide", {}, namespace=GAME_NS)
@@ -397,6 +601,7 @@ def question_select():
 
     controller.set_state("question", qid)
     controller.end_dailydouble()
+    controller.set_state("answer-revealed", "")
     app.socketio.emit(
         "question-show",
         {
@@ -467,9 +672,26 @@ def question_deselect():
     controller = _controller()
     controller.set_state("question", "")
     controller.end_dailydouble()
+    controller.set_state("answer-revealed", "")
     app.socketio.emit("question-hide", {}, namespace=GAME_NS)
     _broadcast_board_update()
     return jsonify(result="success")
+
+
+@api_bp.route("/question/reveal-answer", methods=["POST"])
+def question_reveal_answer():
+    """Reveal the active clue's correct question (the Jeopardy-style
+    response, e.g. "What is Paris?"), same pattern as /final/reveal."""
+    controller = _controller()
+    try:
+        response = controller.reveal_correct_response()
+    except GameProblem as e:
+        return jsonify(result="failure", error=str(e)), 400
+
+    qid = controller.get_state("question")
+    app.socketio.emit("answer-reveal", {"qid": qid, "text": response}, namespace=GAME_NS)
+    _broadcast_state()
+    return jsonify(result="success", text=response)
 
 
 @api_bp.route("/answer", methods=["POST"])

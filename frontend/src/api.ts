@@ -23,7 +23,10 @@ async function request<T = unknown>(
 ): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   const opts: RequestInit = { method, headers };
-  if (body !== undefined) {
+  if (body instanceof FormData) {
+    // Let the browser set Content-Type (with the multipart boundary).
+    opts.body = body;
+  } else if (body !== undefined) {
     headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
   }
@@ -50,9 +53,23 @@ async function request<T = unknown>(
 export const api = {
   state: () => request<ServerState>("/state"),
   roundfiles: () => request<string[]>("/roundfiles"),
+  importRoundfile: (name: string, file: File) => {
+    const form = new FormData();
+    form.append("name", name);
+    form.append("file", file);
+    return request<ApiOk & { roundfiles?: string[] }>("/roundfiles/import", {
+      method: "POST",
+      body: form,
+    });
+  },
 
   init: (payload: InitPayload) =>
     request<ApiOk>("/init", { method: "POST", body: payload }),
+  nextRound: (name: string) =>
+    request<ApiOk>("/init", {
+      method: "POST",
+      body: { action: "next_round", name },
+    }),
   updateTeams: (names: Record<string, string>) =>
     request<ApiOk>("/teams", { method: "POST", body: names }),
 
@@ -77,6 +94,8 @@ export const api = {
     }),
   revealDailyDouble: () =>
     request<ApiOk>("/dailydouble/reveal", { method: "POST" }),
+  revealAnswer: () =>
+    request<ApiOk>("/question/reveal-answer", { method: "POST" }),
 
   showMessage: (id: string, text: string) =>
     request<ApiOk>("/message/show", {
@@ -86,6 +105,17 @@ export const api = {
   hideMessage: () => request<ApiOk>("/message/hide", { method: "POST" }),
 
   finish: () => request<ApiOk>("/finish", { method: "POST" }),
+
+  finalStart: () => request<ApiOk>("/final/start", { method: "POST" }),
+  finalWager: (tid: string, amount: number) =>
+    request<ApiOk>("/final/wager", { method: "POST", body: { tid, amount } }),
+  finalReveal: () => request<ApiOk>("/final/reveal", { method: "POST" }),
+  finalCancel: () => request<ApiOk>("/final/cancel", { method: "POST" }),
+  finalAnswer: (tid: string, correct: boolean) =>
+    request<ApiOk>("/final/answer", {
+      method: "POST",
+      body: { tid, correct },
+    }),
 
   setSliderState: (id: string, value: string | number) =>
     request<ApiOk>("/slider", { method: "POST", body: { id, value } }),

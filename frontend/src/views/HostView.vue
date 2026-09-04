@@ -83,6 +83,7 @@ onMounted(() => {
 
 // ---- Question selection ----
 async function onSelectQuestion(qid: string): Promise<void> {
+  if (finalActive.value) return;
   if (game.activeQuestionId === qid) {
     await api.deselectQuestion();
     lockBuzzers();
@@ -111,17 +112,80 @@ async function submitAnswers(): Promise<void> {
   }
 }
 
+// ---- Next round ----
+// Capped at MAX_ROUNDS (2: Round 1 + "Double Jeopardy") -- past that, the
+// only ways forward are Final Jeopardy or Finish.
+const maxRounds = computed(() => game.config.MAX_ROUNDS ?? 2);
+const showNextRound = computed(
+  () => !game.isFinished && game.round < maxRounds.value,
+);
+const showRoundPicker = ref(false);
+const roundfiles = ref<string[]>([]);
+async function onNextRound(): Promise<void> {
+  if (!showNextRound.value) return;
+  showRoundPicker.value = !showRoundPicker.value;
+  if (showRoundPicker.value) roundfiles.value = await api.roundfiles();
+}
+async function startNextRound(filename: string): Promise<void> {
+  if (
+    !window.confirm(
+      `Start next round with "${filename}"? Teams and scores carry over.`,
+    )
+  ) {
+    return;
+  }
+  await api.nextRound(filename);
+  await game.refresh();
+  showRoundPicker.value = false;
+}
+
+// ---- Final Jeopardy ----
+const showFinalStart = computed(
+  () => !game.isFinished && game.final !== null && !game.final.active,
+);
+const finalActive = computed(() => game.final?.active === true);
+async function onFinalStart(): Promise<void> {
+  if (
+    !window.confirm(
+      "Start Final Jeopardy? This reveals the category and opens wagers.",
+    )
+  ) {
+    return;
+  }
+  await api.finalStart();
+  await game.refresh();
+}
+async function onFinalCancel(): Promise<void> {
+  if (
+    !window.confirm(
+      "Back out of Final Jeopardy and return to the board? This does not end the game -- you can start Final Jeopardy again later.",
+    )
+  ) {
+    return;
+  }
+  await api.finalCancel();
+  await game.refresh();
+}
+async function onFinalReveal(): Promise<void> {
+  await api.finalReveal();
+  await game.refresh();
+}
+
 // ---- Roulette / finish / sounds ----
 function onRoulette(): void {
   api.roulette();
 }
+// Finishing intentionally does NOT navigate anywhere -- the host stays on
+// this screen with the final scores up (team score badges + the "That's all
+// folks!" overlay) until they deliberately choose to start a new game.
 async function onFinish(): Promise<void> {
-  if (
-    window.confirm("Bring the game to the final round (if any). Are you sure?")
-  ) {
+  if (window.confirm("End the game and show final scores. Are you sure?")) {
     await api.finish();
-    router.push({ name: "start" });
+    await game.refresh();
   }
+}
+function goToStart(): void {
+  router.push({ name: "start" });
 }
 function playTimeout(): void {
   playSound("timeout");
@@ -179,10 +243,17 @@ watch(
 );
 
 const activeHtml = computed(() => {
+  // During Final Jeopardy, the standard preview box shows the same
+  // category/question HTML the viewer's big overlay is showing.
+  if (finalActive.value) return game.bigOverlayHtml;
   if (game.isDailyDouble && !game.isDailyDoubleRevealed) {
     return "<p>Daily Double!<br/>Please input user bet.</p>";
   }
-  return game.active_question?.text ?? "";
+  let html = game.active_question?.text ?? "";
+  if (game.active_question?.correct_response) {
+    html += `<hr/>${game.active_question.correct_response}`;
+  }
+  return html;
 });
 
 const canRevealDailyDouble = computed(
@@ -192,8 +263,24 @@ const canRevealDailyDouble = computed(
     game.dailydouble_wager != null,
 );
 
+const canRevealFinal = computed(() => game.final?.stage === "wager");
+
+// Shown once a clue with a "correct question" is on screen (and, for a
+// Daily Double, only after the clue itself has been revealed) and hasn't
+// already been revealed.
+const canRevealAnswer = computed(
+  () =>
+    !!game.active_question?.has_correct_response &&
+    !game.active_question?.correct_response &&
+    (!game.isDailyDouble || game.isDailyDoubleRevealed),
+);
+
 async function onRevealDailyDouble(): Promise<void> {
   await api.revealDailyDouble();
+}
+
+async function onRevealAnswer(): Promise<void> {
+  await api.revealAnswer();
 }
 </script>
 
@@ -209,13 +296,42 @@ async function onRevealDailyDouble(): Promise<void> {
     <div class="container-bottom container-all container-light">
       <HostControls
         :buzzers-locked="buzzersLocked"
+        :show-next-round="showNextRound"
+        :show-final-start="showFinalStart"
+        :show-final-cancel="finalActive"
+        :show-new-game="game.isFinished"
         @roulette="onRoulette"
         @timeout="playTimeout"
         @thinking="toggleThinking"
         @toggle-buzzers="toggleBuzzers"
         @submit="submitAnswers"
+        @next-round="onNextRound"
+        @final-start="onFinalStart"
+        @final-cancel="onFinalCancel"
         @finish="onFinish"
+        @new-game="goToStart"
       />
+
+      <div
+        v-if="showRoundPicker"
+        class="black-box flex-small-pad"
+        style="position: absolute; z-index: 10; padding: 10px; color: #d5c19c"
+      >
+        <p style="margin: 0 0 8px">
+          Start next round (teams/scores carry over):
+        </p>
+        <template v-for="(file, i) in roundfiles" :key="file">
+          <span v-if="i > 0"> · </span>
+          <a
+            style="cursor: pointer; color: #d5c19c; text-decoration: underline"
+            @click="startNextRound(file)"
+            >{{ file }}</a
+          >
+        </template>
+        <div v-if="roundfiles.length === 0" style="margin-top: 6px">
+          No round files found in <code>data/</code>.
+        </div>
+      </div>
 
       <form class="container-bottom-middle" @submit.prevent="submitAnswers">
         <TeamScoringPanel
@@ -239,6 +355,22 @@ async function onRevealDailyDouble(): Promise<void> {
               @click="onRevealDailyDouble"
             >
               <i class="fa-solid fa-eye" /> Reveal clue
+            </button>
+            <button
+              v-if="canRevealAnswer"
+              type="button"
+              class="dd-reveal-btn"
+              @click="onRevealAnswer"
+            >
+              <i class="fa-solid fa-eye" /> Reveal Question
+            </button>
+            <button
+              v-if="canRevealFinal"
+              type="button"
+              class="dd-reveal-btn"
+              @click="onFinalReveal"
+            >
+              <i class="fa-solid fa-eye" /> Reveal Question
             </button>
           </div>
         </div>

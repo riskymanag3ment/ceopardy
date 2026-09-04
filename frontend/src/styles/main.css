@@ -14,7 +14,9 @@
   --ceopardy-text-shadow: 2px 2px 0 #000000;
 }
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -28,8 +30,9 @@ body,
 body {
   margin: 0;
   background-color: #391f0c;
-  font-family: -apple-system, system-ui, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    'Helvetica Neue', Arial, sans-serif;
+  font-family:
+    -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
   overflow: hidden;
 }
 
@@ -215,7 +218,7 @@ button {
   border-width: 0 0 2px 0;
   border-style: solid;
   transition: all 0.5s ease-out;
-  font-family: 'Oleo Script', Helvetica, sans-serif;
+  font-family: "Oleo Script", Helvetica, sans-serif;
 }
 .form-no-form {
   background: transparent;
@@ -256,25 +259,26 @@ button {
   opacity: 0.4;
   pointer-events: none;
 }
-[contenteditable='true']:active,
-[contenteditable='true']:focus {
+[contenteditable="true"]:active,
+[contenteditable="true"]:focus {
   outline: none;
   color: var(--ceopardy-gold);
   border-color: var(--ceopardy-gold);
 }
-[contenteditable='true']:hover {
+[contenteditable="true"]:hover {
   color: var(--ceopardy-gold);
   border-color: var(--ceopardy-gold);
   transition: all 0.5s ease-out;
 }
-.form-cursive[contenteditable='true']:active,
-.form-cursive[contenteditable='true']:focus {
+.form-cursive[contenteditable="true"]:active,
+.form-cursive[contenteditable="true"]:focus {
   border-width: 0 0 2px 0;
 }
-.form-edit[contenteditable='true']:active,
-.form-edit[contenteditable='true']:focus {
+.form-edit[contenteditable="true"]:active,
+.form-edit[contenteditable="true"]:focus {
   border-width: 2px;
-  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075),
+  box-shadow:
+    inset 0 1px 1px rgba(0, 0, 0, 0.075),
     0 0 8px rgba(213, 193, 156, 0.6);
 }
 .form-row {
@@ -396,6 +400,75 @@ svg:hover polygon {
 }
 .dd-reveal-btn:hover {
   background-color: #000181;
+}
+
+/* Shared gold-on-blue input, same family as .dd-reveal-btn -- used for the
+   Daily Double and Final Jeopardy waiger number boxes. */
+.ceopardy-input {
+  background-color: #000181;
+  color: var(--ceopardy-gold);
+  border: 2px solid var(--ceopardy-gold);
+  border-radius: 0.4rem;
+  padding: 0.2rem 0.4rem;
+  font-family: inherit;
+  text-align: center;
+}
+.ceopardy-input:focus {
+  outline: none;
+  background-color: #0001a1;
+}
+.waiger-input {
+  width: 5em;
+}
+.waiger-input::-webkit-outer-spin-button,
+.waiger-input::-webkit-inner-spin-button {
+  opacity: 1;
+}
+
+/* Same gold-bordered pill as .dd-reveal-btn, but sized for inline use
+   (Final Jeopardy team rows) rather than absolute-positioned over a clue. */
+.ceopardy-btn {
+  padding: 0.35rem 0.9rem;
+  background-color: #0001a1;
+  color: var(--ceopardy-gold);
+  text-shadow: var(--ceopardy-text-shadow);
+  font-size: 1rem;
+  border: 2px solid var(--ceopardy-gold);
+  border-radius: 0.4rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+.ceopardy-btn:hover {
+  background-color: #000181;
+}
+.ceopardy-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ceopardy-btn.correct:hover {
+  background-color: #1a5c1a;
+  border-color: #4caf50;
+}
+.ceopardy-btn.incorrect:hover {
+  background-color: #5c1a1a;
+  border-color: #e05353;
+}
+
+/* Final Jeopardy controls -- live inside a TeamScoringPanel's answer-range
+   slot, same as the Daily Double wager UI does, so they inherit that
+   layout for free. */
+.final-row-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--ceopardy-pad));
+  flex-wrap: wrap;
+}
+.final-judged-icon {
+  color: #4caf50;
+  width: 1.4em;
+  text-align: center;
+  font-size: 1.2rem;
 }
 
 /* Fade between TeamRow ↔ TeamRowDailyDouble. */
@@ -548,19 +621,19 @@ svg:hover polygon {
 
 /* Team-themed fonts */
 .team1-font {
-  font-family: 'Merienda One', Helvetica, sans-serif;
+  font-family: "Merienda One", Helvetica, sans-serif;
 }
 .team2-font {
-  font-family: 'Berkshire Swash', Helvetica, sans-serif;
+  font-family: "Berkshire Swash", Helvetica, sans-serif;
 }
 .team3-font {
-  font-family: 'Pacifico', Helvetica, sans-serif;
+  font-family: "Pacifico", Helvetica, sans-serif;
 }
 .team4-font {
-  font-family: 'Dancing', Helvetica, sans-serif;
+  font-family: "Dancing", Helvetica, sans-serif;
 }
 .team5-font {
-  font-family: 'Variane', Helvetica, sans-serif;
+  font-family: "Variane", Helvetica, sans-serif;
 }
 
 .box-score p {
@@ -660,7 +733,7 @@ svg:hover polygon {
   align-items: center;
   justify-content: center;
   font-weight: bolder;
-  font-family: 'Gyparody', Helvetica, sans-serif;
+  font-family: "Gyparody", Helvetica, sans-serif;
   font-size: calc(8vh + 3vw);
   text-shadow: var(--ceopardy-text-shadow);
   transform: scale(0.05) rotateX(0deg);
@@ -684,7 +757,7 @@ svg:hover polygon {
 }
 .start-title {
   font-size: calc(8vh + 8vw);
-  font-family: 'Gyparody', Helvetica, sans-serif;
+  font-family: "Gyparody", Helvetica, sans-serif;
   margin: auto;
   text-align: center;
 }
@@ -697,7 +770,7 @@ svg:hover polygon {
   padding: 0 10px;
   color: #d5c19c;
   text-decoration: none;
-  font-family: 'Oleo Script', Helvetica, sans-serif;
+  font-family: "Oleo Script", Helvetica, sans-serif;
   font-size: calc(1.5vh + 1vw);
 }
 .start-menu a:hover {
@@ -710,36 +783,66 @@ svg:hover polygon {
   animation: horizontal-right 2s ease infinite;
 }
 @keyframes horizontal-left {
-  0% { transform: translate(0, 0); }
-  6% { transform: translate(-5px, 0); }
-  12% { transform: translate(0, 0); }
-  18% { transform: translate(-5px, 0); }
-  24% { transform: translate(0, 0); }
-  30% { transform: translate(-5px, 0); }
-  36%, 100% { transform: translate(0, 0); }
+  0% {
+    transform: translate(0, 0);
+  }
+  6% {
+    transform: translate(-5px, 0);
+  }
+  12% {
+    transform: translate(0, 0);
+  }
+  18% {
+    transform: translate(-5px, 0);
+  }
+  24% {
+    transform: translate(0, 0);
+  }
+  30% {
+    transform: translate(-5px, 0);
+  }
+  36%,
+  100% {
+    transform: translate(0, 0);
+  }
 }
 @keyframes horizontal-right {
-  0% { transform: translate(0, 0); }
-  6% { transform: translate(5px, 0); }
-  12% { transform: translate(0, 0); }
-  18% { transform: translate(5px, 0); }
-  24% { transform: translate(0, 0); }
-  30% { transform: translate(5px, 0); }
-  36%, 100% { transform: translate(0, 0); }
+  0% {
+    transform: translate(0, 0);
+  }
+  6% {
+    transform: translate(5px, 0);
+  }
+  12% {
+    transform: translate(0, 0);
+  }
+  18% {
+    transform: translate(5px, 0);
+  }
+  24% {
+    transform: translate(0, 0);
+  }
+  30% {
+    transform: translate(5px, 0);
+  }
+  36%,
+  100% {
+    transform: translate(0, 0);
+  }
 }
 
 /* Range input (kept from original custom.css) */
-input[type='range'] {
+input[type="range"] {
   -webkit-appearance: none;
   margin: 10px 0;
   width: 100%;
   background: transparent;
 }
-input[type='range']:focus {
+input[type="range"]:focus {
   outline: none;
   background: transparent;
 }
-input[type='range']::-webkit-slider-runnable-track {
+input[type="range"]::-webkit-slider-runnable-track {
   width: 100%;
   height: 6px;
   cursor: pointer;
@@ -747,7 +850,7 @@ input[type='range']::-webkit-slider-runnable-track {
   border-radius: 25px;
   border: 0 solid #000101;
 }
-input[type='range']::-webkit-slider-thumb {
+input[type="range"]::-webkit-slider-thumb {
   border: 0 solid #000000;
   height: 12px;
   width: 28px;
@@ -757,10 +860,10 @@ input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
   margin-top: -3.5px;
 }
-input[type='range']:focus::-webkit-slider-runnable-track {
+input[type="range"]:focus::-webkit-slider-runnable-track {
   background: #d5c19c;
 }
-input[type='range']::-moz-range-track {
+input[type="range"]::-moz-range-track {
   width: 100%;
   height: 13px;
   cursor: pointer;
@@ -768,7 +871,7 @@ input[type='range']::-moz-range-track {
   border-radius: 25px;
   border: 0 solid #000101;
 }
-input[type='range']::-moz-range-thumb {
+input[type="range"]::-moz-range-thumb {
   border: 0 solid #000000;
   height: 20px;
   width: 39px;
@@ -788,16 +891,40 @@ input[type='range']::-moz-range-thumb {
     margin-right: auto !important;
     width: 1200px;
   }
-  .box-category-host p { font-size: 20px; }
-  .box-question-host p { font-size: 40px; }
-  .box-question-status span { font-size: 12px; }
-  .box-category-viewer p { font-size: 30px; }
-  .box-question-viewer p { font-size: 60px; }
-  .box-team p { font-size: 28px; }
-  .box-team-host p { font-size: 20px; }
-  .box-score p { font-size: 30px; }
-  .form-header { font-size: 40px; }
-  .form-text { font-size: 30px; }
-  .box-overlay { padding: 8px; }
-  .box-fake-overlay { padding: 4px; }
+  .box-category-host p {
+    font-size: 20px;
+  }
+  .box-question-host p {
+    font-size: 40px;
+  }
+  .box-question-status span {
+    font-size: 12px;
+  }
+  .box-category-viewer p {
+    font-size: 30px;
+  }
+  .box-question-viewer p {
+    font-size: 60px;
+  }
+  .box-team p {
+    font-size: 28px;
+  }
+  .box-team-host p {
+    font-size: 20px;
+  }
+  .box-score p {
+    font-size: 30px;
+  }
+  .form-header {
+    font-size: 40px;
+  }
+  .form-text {
+    font-size: 30px;
+  }
+  .box-overlay {
+    padding: 8px;
+  }
+  .box-fake-overlay {
+    padding: 4px;
+  }
 }

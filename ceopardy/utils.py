@@ -143,20 +143,29 @@ def parse_questions_csv(file_stream):
     """Parse a spreadsheet-style CSV covering one or more rounds, plus an
     optional Final Jeopardy row.
 
-    Expected shape (the header row is cosmetic and ignored):
-        round, category,    100,          200, ...
-        1,     Category A,  question 1,   question 2, ...
+    Expected shape (the header row is cosmetic and ignored). Each point
+    value gets its own clue column immediately followed by its own answer
+    column -- the answer column may be left blank if that clue shouldn't
+    have a revealable correct question:
+        round, category,    100,        100 answer, 200,        200 answer, ...
+        1,     Category A,  question 1, answer 1,    question 2, ,          ...
         1,     Category B,  ...
         2,     Category C,  ...
-        final, Final Cat.,  Final question text
+        final, Final Cat.,  Final question text, Final answer
 
     Rows sharing the same "round" value must be grouped together (in the
     order they should be played) and each round needs exactly
-    CATEGORIES_PER_GAME rows of QUESTIONS_PER_CATEGORY questions. Prefix a
-    cell with "[dbl]" to mark it a Daily Double (same convention as the
-    plain-text question format). At most one "final" row is allowed
-    (case-insensitive in the round column), attached to whichever round is
-    played last.
+    CATEGORIES_PER_GAME rows of QUESTIONS_PER_CATEGORY clue/answer pairs.
+    Prefix a clue cell with "[dbl]" to mark it a Daily Double (same
+    convention as the plain-text question format). At most one "final" row
+    is allowed (case-insensitive in the round column), attached to
+    whichever round is played last.
+
+    Internally, a clue and its answer are recombined into this module's
+    plain-text "<clue> :: <answer>" convention (see parse_questions() /
+    controller.setup_questions()) so the rest of the pipeline -- the
+    generated Questions-<slug>.cp file, the game engine -- needs no
+    separate code path for CSV-sourced content.
 
     Returns (rounds, final):
       rounds: [{category_name: [q1, q2, ...]}, ...], one dict per round in
@@ -169,7 +178,11 @@ def parse_questions_csv(file_stream):
         raise QuestionParsingError("The CSV file is empty")
 
     data_rows = rows[1:]  # first row is a header, purely for the author's benefit
-    expected_cols = 2 + config["QUESTIONS_PER_CATEGORY"]
+    nb_questions = config["QUESTIONS_PER_CATEGORY"]
+    expected_cols = 2 + 2 * nb_questions  # round, category, then (clue, answer) x N
+
+    def _combine(clue, answer):
+        return f"{clue} :: {answer}" if answer else clue
 
     round_order = []
     rounds = {}
@@ -182,17 +195,22 @@ def parse_questions_csv(file_stream):
         if row[0].lower() == "final":
             if final is not None:
                 raise QuestionParsingError(f"Row {i}: only one 'final' row is allowed")
-            if len(row) < 3 or not row[1] or not row[2]:
+            category = row[1] if len(row) > 1 else ""
+            clue = row[2] if len(row) > 2 else ""
+            answer = row[3] if len(row) > 3 else ""
+            if not category or not clue:
                 raise QuestionParsingError(
-                    f"Row {i}: a 'final' row needs a category and a question"
+                    f"Row {i}: a 'final' row needs a category and a clue "
+                    "(round, category, clue, answer)"
                 )
-            final = {"category": row[1], "question": row[2]}
+            final = {"category": category, "question": _combine(clue, answer)}
             continue
 
         if len(row) != expected_cols:
             raise QuestionParsingError(
-                f"Row {i}: expected {expected_cols} columns (round, category + "
-                f"{config['QUESTIONS_PER_CATEGORY']} questions), got {len(row)}"
+                f"Row {i}: expected {expected_cols} columns (round, category, then "
+                f"a clue + answer column for each of the {nb_questions} questions), "
+                f"got {len(row)}"
             )
         round_label, category = row[0], row[1]
         if not round_label:
@@ -204,9 +222,17 @@ def parse_questions_csv(file_stream):
                 f"Row {i}: duplicate category '{category}' (category names must be "
                 "unique across the whole sheet, even across different rounds)"
             )
-        questions = row[2:]
-        if any(not q for q in questions):
-            raise QuestionParsingError(f"Row {i} ({category}): a question cell is empty")
+
+        pairs = row[2:]
+        questions = []
+        for q_idx in range(nb_questions):
+            clue = pairs[2 * q_idx]
+            answer = pairs[2 * q_idx + 1]
+            if not clue:
+                raise QuestionParsingError(
+                    f"Row {i} ({category}): question {q_idx + 1}'s clue is empty"
+                )
+            questions.append(_combine(clue, answer))
 
         if round_label not in rounds:
             round_order.append(round_label)

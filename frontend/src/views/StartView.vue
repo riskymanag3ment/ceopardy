@@ -124,28 +124,25 @@ function downloadTemplate(): void {
   const cats = game.config.CATEGORIES_PER_GAME ?? 6;
   const qs = game.config.QUESTIONS_PER_CATEGORY ?? 5;
   const tick = game.scoreTick;
-  const header = [
-    "round",
-    "category",
-    ...Array.from({ length: qs }, (_, i) => String((i + 1) * tick)),
-  ];
+  const header = ["round", "category"];
+  for (let i = 1; i <= qs; i++) {
+    header.push(String(i * tick), `${i * tick} answer`);
+  }
   const rows = [header];
   for (const round of [1, 2]) {
     for (let c = 1; c <= cats; c++) {
-      rows.push([
-        String(round),
-        `Round ${round} Category ${c}`,
-        ...Array.from(
-          { length: qs },
-          (_, q) => `Question ${q + 1} :: What is the answer?`,
-        ),
-      ]);
+      const row = [String(round), `Round ${round} Category ${c}`];
+      for (let q = 1; q <= qs; q++) {
+        row.push(`Question ${q}`, `What is the answer?`);
+      }
+      rows.push(row);
     }
   }
   rows.push([
     "final",
     "Final Category",
-    "Final question text :: What is the answer?",
+    "Final question text",
+    "What is the answer?",
   ]);
   const csv = rows
     .map((r) => r.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(","))
@@ -180,10 +177,10 @@ function downloadTemplate(): void {
         <b>Add questions:</b> download the template, fill it in with your
         categories and questions in Google Sheets/Excel (a "round" column lets
         you lay out multiple rounds, plus an optional Final Jeopardy row),
-        export as CSV, then upload it here. Add
-        <code>:: What is the answer?</code> after a clue to give it a
-        Jeopardy-style correct question, revealed with its own button during
-        play.
+        export as CSV, then upload it here. Each clue has its own answer column
+        right next to it — fill it in to give that clue a Jeopardy-style correct
+        question, revealed with its own button during play, or leave it blank
+        for no reveal.
       </p>
       <button type="button" @click="downloadTemplate">
         Download template CSV

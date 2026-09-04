@@ -69,12 +69,24 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # CORS for dev so that http://localhost:5173 can hit http://127.0.0.1:5000.
-# We deliberately don't make this configurable — the app isn't meant to be
-# exposed over a network.
+# Production serves everything from one origin and needs no CORS grant at
+# all, so the REST API's CORS is scoped to just the Vite dev ports rather
+# than "*" -- a wildcard there would let any external page's JS make
+# authenticated requests using a host's cached HTTP Basic Auth credentials
+# (see the host-password auth gate in the API routes) and read the
+# response. Socket.IO stays wide open: it's broadcast-only in this app
+# (server -> client state pushes; see the "connect"/"disconnect" handlers
+# below, no client-initiated mutations), and its own CORS check applies
+# even to same-origin connections, so restricting it broke the deployed
+# viewer/host without adding any real protection.
+_DEV_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
 try:
     from flask_cors import CORS
 
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    CORS(app, resources={r"/api/*": {"origins": _DEV_ORIGINS}})
 except ImportError:
     # flask-cors is optional; prod serves everything from the same origin.
     pass

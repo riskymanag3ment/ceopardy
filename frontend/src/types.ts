@@ -103,6 +103,7 @@ export interface QuestionShowEvent {
   text: string;
   category: string;
   dailydouble: boolean;
+  has_correct_response?: boolean;
 }
 
 export interface DailyDoubleEvent {
@@ -110,6 +111,7 @@ export interface DailyDoubleEvent {
   category: string;
   team?: string;
   range?: Range;
+  has_correct_response?: boolean;
 }
 
 export interface DailyDoubleRevealEvent {

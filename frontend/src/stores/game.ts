@@ -166,6 +166,7 @@ export const useGameStore = defineStore("game", {
           text: data.text,
           category: data.category,
           dailydouble: data.dailydouble,
+          has_correct_response: data.has_correct_response,
         };
         this.ui_state.question = data.qid;
         this.ui_state.dailydouble = data.dailydouble ? "enabled" : "";
@@ -181,7 +182,11 @@ export const useGameStore = defineStore("game", {
       s.on("dailydouble", (data: DailyDoubleEvent) => {
         this.ui_state.question = data.qid;
         this.ui_state.dailydouble = "enabled";
-        this.active_question = { category: data.category, dailydouble: true };
+        this.active_question = {
+          category: data.category,
+          dailydouble: true,
+          has_correct_response: data.has_correct_response,
+        };
         if (data.team) this.ui_state.team = data.team;
         if (data.range) this.dailydouble_range = data.range;
         this.dailydouble_wager = null;

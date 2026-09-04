@@ -588,6 +588,7 @@ def question_select():
                 "category": question["category"],
                 "team": ctrl_team.tid,
                 "range": {"min": dbl_min, "max": dbl_max},
+                "has_correct_response": question["has_correct_response"],
             },
             namespace=GAME_NS,
         )
@@ -609,6 +610,7 @@ def question_select():
             "text": question["text"],
             "category": question["category"],
             "dailydouble": False,
+            "has_correct_response": question["has_correct_response"],
         },
         namespace=GAME_NS,
     )

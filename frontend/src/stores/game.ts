@@ -47,6 +47,12 @@ interface GameStoreState {
   dailydouble_range: Range;
   dailydouble_wager: DailyDoubleWager | null;
   final: FinalState | null;
+  // Host-only: the current clue's answer, known to the host the moment they
+  // select/reveal a clue (from the direct HTTP response), never from a
+  // broadcast. Never set on the viewer. Cleared on select/deselect, and
+  // superseded by active_question.correct_response once the host reveals
+  // it to everyone.
+  hostAnswerPreview: string | null;
   // Incremented every time the server fires a new daily-double. Lets the
   // viewer trigger the flip animation without watching for state changes
   // that might bounce during reconnects.
@@ -86,6 +92,7 @@ export const useGameStore = defineStore("game", {
     // outside DD or before the operator has set anything.
     dailydouble_wager: null,
     final: null,
+    hostAnswerPreview: null,
     dailydoubleTrigger: 0,
     socket: null,
     rouletteTarget: null,
@@ -177,6 +184,7 @@ export const useGameStore = defineStore("game", {
         this.ui_state.question = "";
         this.ui_state.dailydouble = "";
         this.dailydouble_wager = null;
+        this.hostAnswerPreview = null;
       });
 
       s.on("dailydouble", (data: DailyDoubleEvent) => {

@@ -93,7 +93,9 @@ export const api = {
       body: { amount },
     }),
   revealDailyDouble: () =>
-    request<ApiOk>("/dailydouble/reveal", { method: "POST" }),
+    request<ApiOk & { correct_response?: string }>("/dailydouble/reveal", {
+      method: "POST",
+    }),
   revealAnswer: () =>
     request<ApiOk>("/question/reveal-answer", { method: "POST" }),
 

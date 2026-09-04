@@ -87,8 +87,10 @@ async function onSelectQuestion(qid: string): Promise<void> {
   if (game.activeQuestionId === qid) {
     await api.deselectQuestion();
     lockBuzzers();
+    game.hostAnswerPreview = null;
     return;
   }
+  game.hostAnswerPreview = null; // clear the previous clue's answer immediately
   const data = await api.selectQuestion(qid);
   if (data?.dailydouble) {
     if (data.dailydouble_range) game.dailydouble_range = data.dailydouble_range;
@@ -96,8 +98,11 @@ async function onSelectQuestion(qid: string): Promise<void> {
     // No buzzer race in a Daily Double — only the controlling team plays.
     lockBuzzers();
     playSound("dailydouble");
+    // The DD clue (and its answer) aren't shown until "Reveal clue" --
+    // hostAnswerPreview is set there instead, once the clue itself is up.
   } else {
     unlockBuzzers();
+    if (data?.correct_response) game.hostAnswerPreview = data.correct_response;
   }
 }
 
@@ -249,11 +254,23 @@ const activeHtml = computed(() => {
   if (game.isDailyDouble && !game.isDailyDoubleRevealed) {
     return "<p>Daily Double!<br/>Please input user bet.</p>";
   }
-  let html = game.active_question?.text ?? "";
+  // Revealed to everyone: only the answer, nothing else.
   if (game.active_question?.correct_response) {
-    html += `<hr/>${game.active_question.correct_response}`;
+    return game.active_question.correct_response;
   }
-  return html;
+  const clue = game.active_question?.text ?? "";
+  // Host-only, always-visible answer preview -- known before anyone else
+  // sees it, shown clearly separated from the clue so it's easy to read.
+  if (!game.hostAnswerPreview) return clue;
+  return (
+    `<div class="host-clue-answer-wrap">` +
+    `<div class="host-clue-text">${clue}</div>` +
+    `<div class="host-answer-block">` +
+    `<span class="host-answer-label">Answer</span>` +
+    `${game.hostAnswerPreview}` +
+    `</div>` +
+    `</div>`
+  );
 });
 
 const canRevealDailyDouble = computed(
@@ -265,18 +282,15 @@ const canRevealDailyDouble = computed(
 
 const canRevealFinal = computed(() => game.final?.stage === "wager");
 
-// Shown once a clue with a "correct question" is on screen (and, for a
-// Daily Double, only after the clue itself has been revealed) and hasn't
-// already been revealed.
+// Eye icon: shown once the host knows the answer and it hasn't been
+// revealed to everyone yet.
 const canRevealAnswer = computed(
-  () =>
-    !!game.active_question?.has_correct_response &&
-    !game.active_question?.correct_response &&
-    (!game.isDailyDouble || game.isDailyDoubleRevealed),
+  () => !!game.hostAnswerPreview && !game.active_question?.correct_response,
 );
 
 async function onRevealDailyDouble(): Promise<void> {
-  await api.revealDailyDouble();
+  const data = await api.revealDailyDouble();
+  if (data?.correct_response) game.hostAnswerPreview = data.correct_response;
 }
 
 async function onRevealAnswer(): Promise<void> {
@@ -359,10 +373,11 @@ async function onRevealAnswer(): Promise<void> {
             <button
               v-if="canRevealAnswer"
               type="button"
-              class="dd-reveal-btn"
+              class="eye-reveal-icon"
+              title="Reveal the answer to everyone"
               @click="onRevealAnswer"
             >
-              <i class="fa-solid fa-eye" /> Reveal Question
+              <i class="fa-solid fa-eye" />
             </button>
             <button
               v-if="canRevealFinal"

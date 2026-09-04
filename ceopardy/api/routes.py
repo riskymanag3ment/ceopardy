@@ -619,6 +619,11 @@ def question_select():
         dailydouble=False,
         question=question["text"],
         answer=answer,
+        # Sent only in this direct (host-authenticated) response, never
+        # broadcast -- the host needs the answer immediately to judge, but
+        # the shared /game socket room (host + viewer alike) must not see
+        # it until the host explicitly reveals it via /question/reveal-answer.
+        correct_response=controller.get_correct_response(col, row),
     )
 
 
@@ -641,7 +646,9 @@ def dailydouble_reveal():
         {"qid": qid, "text": question["text"], "category": question["category"]},
         namespace=GAME_NS,
     )
-    return jsonify(result="success")
+    # Same host-only pattern as /question/select: the answer goes only in
+    # this direct response, not the broadcast above.
+    return jsonify(result="success", correct_response=controller.get_correct_response(col, row))
 
 
 @api_bp.route("/dailydouble/wager", methods=["POST"])

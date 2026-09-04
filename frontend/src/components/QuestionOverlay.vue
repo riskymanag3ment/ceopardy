@@ -12,13 +12,12 @@ const visible = computed(
     !!game.activeQuestionId &&
     (!game.isDailyDouble || game.isDailyDoubleRevealed),
 );
-const html = computed(() => {
-  let out = game.active_question?.text ?? "";
-  if (game.active_question?.correct_response) {
-    out += `<hr/>${game.active_question.correct_response}`;
-  }
-  return out;
-});
+// Once the host reveals the answer, replace the clue with it entirely
+// rather than showing both -- the reveal is the "here's the answer" beat.
+const html = computed(
+  () =>
+    game.active_question?.correct_response || game.active_question?.text || "",
+);
 </script>
 
 <template>

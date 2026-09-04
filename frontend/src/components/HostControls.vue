@@ -5,8 +5,18 @@ import { ref } from "vue";
 const props = withDefaults(
   defineProps<{
     buzzersLocked?: boolean;
+    showNextRound?: boolean;
+    showFinalStart?: boolean;
+    showFinalCancel?: boolean;
+    showNewGame?: boolean;
   }>(),
-  { buzzersLocked: true },
+  {
+    buzzersLocked: true,
+    showNextRound: false,
+    showFinalStart: false,
+    showFinalCancel: false,
+    showNewGame: false,
+  },
 );
 const emit = defineEmits<{
   (e: "roulette"): void;
@@ -14,7 +24,11 @@ const emit = defineEmits<{
   (e: "thinking"): void;
   (e: "toggle-buzzers"): void;
   (e: "submit"): void;
+  (e: "next-round"): void;
+  (e: "final-start"): void;
+  (e: "final-cancel"): void;
   (e: "finish"): void;
+  (e: "new-game"): void;
 }>();
 const spinning = ref(false);
 function hoverSpinner(state: boolean): void {
@@ -72,11 +86,44 @@ function hoverSpinner(state: boolean): void {
               <i class="fa-regular fa-square-check fa-2x" />
             </div>
             <div
+              v-if="props.showNextRound"
+              class="form-icon form-click"
+              title="Start next round (keeps teams and scores)"
+              @click="emit('next-round')"
+            >
+              <i class="fa-solid fa-forward fa-2x" />
+            </div>
+            <div
+              v-if="props.showFinalStart"
+              class="form-icon form-click"
+              title="Start Final Jeopardy (wagers, then the question)"
+              @click="emit('final-start')"
+            >
+              <i class="fa-solid fa-star fa-2x" />
+            </div>
+            <div
+              v-if="props.showFinalCancel"
+              class="form-icon form-click"
+              title="Back out of Final Jeopardy (does not end the game)"
+              @click="emit('final-cancel')"
+            >
+              <i class="fa-solid fa-rotate-left fa-2x" />
+            </div>
+            <div
+              v-if="!props.showNewGame"
               class="form-icon form-click"
               title="Finish the game"
               @click="emit('finish')"
             >
               <i class="fa-solid fa-right-from-bracket fa-2x" />
+            </div>
+            <div
+              v-if="props.showNewGame"
+              class="form-icon form-click"
+              title="Start a new game"
+              @click="emit('new-game')"
+            >
+              <i class="fa-solid fa-flag-checkered fa-2x" />
             </div>
           </div>
         </div>

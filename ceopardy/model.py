@@ -41,11 +41,16 @@ class Game(db.Model):
     ceopardy_version = db.Column(db.String(16))
     schema_version = db.Column(db.Integer)
     round_filename = db.Column(db.String(255))
+    # Which round's questions are currently on the board. Bumped by
+    # start_next_round() without touching Team/Answer rows, so scores stay
+    # cumulative across rounds.
+    current_round = db.Column(db.Integer)
 
     def __init__(self):
         self.state = GameState.uninitialized
         self.ceopardy_version = VERSION
         self.schema_version = SCHEMA_VERSION
+        self.current_round = 1
 
     def __repr__(self):
         return "<Game in state %r>" % self.state
@@ -80,10 +85,28 @@ class Question(db.Model):
     double = db.Column(db.Boolean)
     row = db.Column(db.Integer)
     col = db.Column(db.Integer)
+    # Which round this question belongs to. Lets a second (or later) round's
+    # questions reuse col/row numbering without colliding with earlier
+    # rounds' rows, which are kept around for score history.
+    round = db.Column(db.Integer)
+    # The Jeopardy-style "correct question" (e.g. "What is Paris?") for this
+    # clue -- optional, kept hidden from the board until the host reveals it.
+    correct_response = db.Column(db.String(255))
 
     answers = db.relationship("Answer", back_populates="question")
 
-    def __init__(self, text, score_original, category, row, col, final=False, double=False):
+    def __init__(
+        self,
+        text,
+        score_original,
+        category,
+        row,
+        col,
+        final=False,
+        double=False,
+        round=1,
+        correct_response="",
+    ):
         self.text = text
         self.score_original = score_original
         self.category = category
@@ -91,6 +114,8 @@ class Question(db.Model):
         self.col = col
         self.final = final
         self.double = double
+        self.round = round
+        self.correct_response = correct_response
 
     def __repr__(self):
         return "<Question {} for {} at col {} row {}>".format(

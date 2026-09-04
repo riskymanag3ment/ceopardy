@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { useGameStore } from "@/stores/game";
 import { api } from "@/api";
 import type { Team } from "@/types";
@@ -61,6 +61,29 @@ function selectTeam(): void {
   api.selectTeam(tid.value);
 }
 
+// ---- Final Jeopardy: wager entry + judging, same slot as normal scoring ----
+const finalStage = computed(() => game.final?.stage ?? null);
+const finalMaxWager = computed(() => Math.max(props.team.score, 0));
+const finalWagered = computed(
+  () => game.final?.wagered.includes(tid.value) ?? false,
+);
+const finalJudged = computed(
+  () => game.final?.judged.includes(tid.value) ?? false,
+);
+const finalWagerInput = ref(finalMaxWager.value);
+watch(finalMaxWager, (max) => {
+  if (!finalWagered.value) finalWagerInput.value = max;
+});
+
+async function lockInFinalWager(): Promise<void> {
+  await api.finalWager(tid.value, finalWagerInput.value);
+  await game.refresh();
+}
+async function judgeFinal(correct: boolean): Promise<void> {
+  await api.finalAnswer(tid.value, correct);
+  await game.refresh();
+}
+
 const answerVal = computed(() => props.answers[tid.value] ?? 0);
 const doubleVal = computed(
   () => props.answers[`${tid.value}-dailydouble`] ?? -1,
@@ -108,8 +131,61 @@ const teamFontClass = `team${props.idx + 1}-font`;
               <p>{{ team.name }}</p>
             </div>
 
+            <!-- Final Jeopardy: wager entry -->
+            <div v-if="finalStage === 'wager'" class="box-answer-range">
+              <div class="box-answer-range-label">
+                <div>
+                  <p>Wager (max ${{ finalMaxWager }})</p>
+                </div>
+              </div>
+              <div class="final-row-controls">
+                <input
+                  v-model.number="finalWagerInput"
+                  type="number"
+                  class="ceopardy-input waiger-input"
+                  min="0"
+                  :max="finalMaxWager"
+                />
+                <button
+                  type="button"
+                  class="ceopardy-btn"
+                  @click="lockInFinalWager"
+                >
+                  {{ finalWagered ? "Update" : "Lock in" }}
+                </button>
+                <i
+                  v-if="finalWagered"
+                  class="fa-solid fa-check final-judged-icon"
+                />
+              </div>
+            </div>
+
+            <!-- Final Jeopardy: judging -->
+            <div v-else-if="finalStage === 'revealed'" class="box-answer-range">
+              <div class="final-row-controls">
+                <button
+                  type="button"
+                  class="ceopardy-btn correct"
+                  @click="judgeFinal(true)"
+                >
+                  Correct
+                </button>
+                <button
+                  type="button"
+                  class="ceopardy-btn incorrect"
+                  @click="judgeFinal(false)"
+                >
+                  Incorrect
+                </button>
+                <i
+                  v-if="finalJudged"
+                  class="fa-solid fa-check final-judged-icon"
+                />
+              </div>
+            </div>
+
             <!-- Normal scoring -->
-            <div v-if="!dailydouble" class="box-answer-range">
+            <div v-else-if="!dailydouble" class="box-answer-range">
               <input
                 class="team-range"
                 :name="tid"
@@ -145,7 +221,14 @@ const teamFontClass = `team${props.idx + 1}-font`;
               <div class="box-answer-range-label">
                 <div><p>Minimum</p></div>
                 <div>
-                  <p>{{ waigerVal }}</p>
+                  <input
+                    v-model.number="waigerVal"
+                    type="number"
+                    class="waiger-input"
+                    :min="game.dailydouble_range.min"
+                    :max="game.dailydouble_range.max"
+                    step="1"
+                  />
                 </div>
                 <div><p>All-in!</p></div>
               </div>

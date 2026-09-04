@@ -6,12 +6,19 @@
 import ViewerBoard from "@/components/ViewerBoard.vue";
 import QuestionOverlay from "@/components/QuestionOverlay.vue";
 import BigOverlay from "@/components/BigOverlay.vue";
+import FinalScoreboard from "@/components/FinalScoreboard.vue";
+import { useGameStore } from "@/stores/game";
+
+const game = useGameStore();
 </script>
 
 <template>
   <div>
-    <ViewerBoard />
-    <QuestionOverlay />
-    <BigOverlay />
+    <FinalScoreboard v-if="game.isFinished" />
+    <template v-else>
+      <ViewerBoard />
+      <QuestionOverlay />
+      <BigOverlay />
+    </template>
   </div>
 </template>

@@ -19,8 +19,13 @@ import os
 
 config = {
     "NB_TEAMS": 3,
-    "VARIABLE_TEAMS": False,
-    "CATEGORIES_PER_GAME": 5,
+    "MIN_TEAMS": 3,
+    "MAX_TEAMS": 5,
+    "VARIABLE_TEAMS": True,
+    "CATEGORIES_PER_GAME": 6,
+    # Round 1 + Round 2 ("Double Jeopardy"), then Final Jeopardy -- matches
+    # the real show's structure. "Next Round" is refused past this.
+    "MAX_ROUNDS": 2,
     "QUESTIONS_PER_CATEGORY": 5,
     "QUESTIONS_FILENAME": "data/Questions.cp",
     "SCORE_TICK": 100,

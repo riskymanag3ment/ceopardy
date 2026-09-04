@@ -15,7 +15,9 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
+import json
 import os
+import re
 from collections import OrderedDict
 from datetime import datetime
 
@@ -102,39 +104,120 @@ class Controller:
         db.session.commit()
 
     @staticmethod
-    def setup_questions(round_file, q_file=config["QUESTIONS_FILENAME"]):
-        app.logger.info("Setup questions from file: {}".format(q_file))
+    def setup_questions(round_file, q_file=config["QUESTIONS_FILENAME"], round_number=1):
+        app.logger.info("Setup questions from file: {} (round {})".format(q_file, round_number))
         game = Game.query.one()
-        if game.state == GameState.uninitialized:
-            gamefile, final = parse_gamefile(config["BASE_DIR"] + "data/" + round_file)
-            questions = parse_questions(config["BASE_DIR"] + q_file)
+        if round_number == 1:
+            if game.state != GameState.uninitialized:
+                raise GameProblem("Trying to setup a game that is already started")
+        else:
+            if game.state != GameState.in_round:
+                raise GameProblem("Trying to start a next round when no round is in progress")
 
-            # TODO do some validation based on config constants
-            for _col, _cat in enumerate(gamefile, start=1):
-                for _row, _q in enumerate(questions[_cat], start=1):
-                    score = _row * config["SCORE_TICK"]
+        # CSV-imported rounds get their own dedicated questions file
+        # (data/Questions-<slug>.cp) instead of sharing the default one, so
+        # importing never collides with hand-edited content. A multi-round
+        # import shares one such file across "<slug>-round1.round",
+        # "<slug>-round2.round", etc., so the "-round<N>" suffix is
+        # stripped before deriving the shared filename. Detected purely by
+        # convention so callers (/init, next_round) need no changes.
+        if q_file == config["QUESTIONS_FILENAME"]:
+            stem = round_file.rsplit(".", 1)[0]
+            base_stem = re.sub(r"-round\d+$", "", stem)
+            candidate = "data/Questions-{}.cp".format(base_stem)
+            if os.path.exists(config["BASE_DIR"] + candidate):
+                q_file = candidate
 
-                    daily_double = False
-                    if _q.startswith("[dbl]"):
-                        _q = _q.lstrip("[dbl]").lstrip()
-                        daily_double = True
+        gamefile, final = parse_gamefile(config["BASE_DIR"] + "data/" + round_file)
+        questions = parse_questions(config["BASE_DIR"] + q_file)
 
-                    question = Question(_q, score, _cat, _row, _col, double=daily_double)
-                    db.session.add(question)
+        # TODO do some validation based on config constants
+        for _col, _cat in enumerate(gamefile, start=1):
+            for _row, _q in enumerate(questions[_cat], start=1):
+                # Each round's values scale with its number (round 2 =
+                # "Double Jeopardy" = 2x round 1, matching the real show).
+                score = _row * config["SCORE_TICK"] * round_number
 
-            # Add final question
-            if final is not None:
-                final = FinalQuestion(**final)
-                question = Question(final.question, 0, final.category, 0, 0, final=True)
+                daily_double = False
+                if _q.startswith("[dbl]"):
+                    _q = _q.lstrip("[dbl]").lstrip()
+                    daily_double = True
+
+                # Optional "<clue> :: <correct question>" split, e.g.
+                # "The capital of France :: What is Paris?" -- the part
+                # after "::" is hidden until the host reveals it.
+                correct_response = ""
+                if "::" in _q:
+                    _q, correct_response = _q.split("::", 1)
+                    _q = _q.strip()
+                    correct_response = correct_response.strip()
+
+                question = Question(
+                    _q,
+                    score,
+                    _cat,
+                    _row,
+                    _col,
+                    double=daily_double,
+                    round=round_number,
+                    correct_response=correct_response,
+                )
                 db.session.add(question)
 
-            # Once everything loaded successfully, identify round file and commit
-            game.round_filename = round_file
-            db.session.add(game)
-            db.session.commit()
+        # Add final question
+        if final is not None:
+            final = FinalQuestion(**final)
+            final_text = final.question
+            final_response = ""
+            if "::" in final_text:
+                final_text, final_response = final_text.split("::", 1)
+                final_text = final_text.strip()
+                final_response = final_response.strip()
+            question = Question(
+                final_text,
+                0,
+                final.category,
+                0,
+                0,
+                final=True,
+                round=round_number,
+                correct_response=final_response,
+            )
+            db.session.add(question)
 
-        else:
-            raise GameProblem("Trying to setup a game that is already started")
+        # Once everything loaded successfully, identify round file and commit
+        game.round_filename = round_file
+        game.current_round = round_number
+        db.session.add(game)
+        db.session.commit()
+        return True
+
+    @staticmethod
+    def get_current_round():
+        return Game.query.one().current_round or 1
+
+    @staticmethod
+    def start_next_round(round_file):
+        """Load a new round's questions while keeping teams and cumulative
+        scores intact (unlike a brand new game, nothing is wiped)."""
+        game = Game.query.one()
+        if game.state != GameState.in_round:
+            raise GameProblem("Trying to start a next round when no round is in progress")
+        current_round = game.current_round or 1
+        if current_round >= config["MAX_ROUNDS"]:
+            raise GameProblem(
+                f"Already at the last round ({config['MAX_ROUNDS']}); "
+                "start Final Jeopardy or finish the game instead"
+            )
+
+        next_round = current_round + 1
+        Controller.setup_questions(round_file, round_number=next_round)
+
+        # Reset per-round UI state so the new board starts clean.
+        Controller.set_state("question", "")
+        Controller.end_dailydouble()
+        Controller.end_final()
+        Controller.set_state("team", "")
         return True
 
     @staticmethod
@@ -331,7 +414,7 @@ class Controller:
 
     @staticmethod
     def get_nb_teams():
-        return config["NB_TEAMS"]
+        return Team.query.count() or config["NB_TEAMS"]
 
     @staticmethod
     def get_categories():
@@ -339,7 +422,7 @@ class Controller:
             _q.category
             for _q in db.session.query(Question.category)
             .distinct()
-            .filter(Question.final == False)  # noqa: E712
+            .filter(Question.final == False, Question.round == Controller.get_current_round())  # noqa: E712
             .order_by(Question.col)
         ]
 
@@ -347,13 +430,43 @@ class Controller:
     def get_question(column, row):
         app.logger.info("Question requested for row: {} and col: {}".format(row, column))
 
-        condition = and_(Question.row == row, Question.col == column)
+        condition = and_(
+            Question.row == row,
+            Question.col == column,
+            Question.round == Controller.get_current_round(),
+        )
         _q = Question.query.filter(condition).one()
         return {
             "text": question_to_html(_q.text),
             "category": _q.category,
             "dailydouble": _q.double,
+            "has_correct_response": bool(_q.correct_response),
         }
+
+    @staticmethod
+    def get_correct_response(column, row):
+        """The Jeopardy-style correct question for a clue, or "" if unset."""
+        condition = and_(
+            Question.row == row,
+            Question.col == column,
+            Question.round == Controller.get_current_round(),
+        )
+        _q = Question.query.filter(condition).one()
+        return question_to_html(_q.correct_response) if _q.correct_response else ""
+
+    @staticmethod
+    def reveal_correct_response():
+        """Reveal the active clue's correct question, e.g. after the host
+        judges an answer. No-op-safe: raises if there's nothing to reveal."""
+        qid = Controller.get_complete_state().get("question", "")
+        if not qid:
+            raise GameProblem("No active question")
+        col, row = parse_question_id(qid)
+        response = Controller.get_correct_response(col, row)
+        if not response:
+            raise GameProblem("This question has no correct response set")
+        Controller.set_state("answer-revealed", "true")
+        return response
 
     @staticmethod
     def get_active_question():
@@ -362,18 +475,143 @@ class Controller:
         if qid != "":
             col, row = parse_question_id(qid)
             _q = Controller.get_question(col, row)
+            if Controller.get_state("answer-revealed") == "true":
+                _q["correct_response"] = Controller.get_correct_response(col, row)
         return _q
 
     @staticmethod
     def is_final_question():
         """Is there a final question for this game?"""
-        return Question.query.filter(Question.final == True).one_or_none() is not None  # noqa: E712
+        condition = and_(Question.final == True, Question.round == Controller.get_current_round())  # noqa: E712
+        return Question.query.filter(condition).one_or_none() is not None
+
+    @staticmethod
+    def get_final_question():
+        """The Question row for this round's Final Jeopardy, or None."""
+        condition = and_(Question.final == True, Question.round == Controller.get_current_round())  # noqa: E712
+        return Question.query.filter(condition).one_or_none()
+
+    @staticmethod
+    def get_final_question_payload():
+        q = Controller.get_final_question()
+        if q is None:
+            return None
+        return {"category": q.category, "text": question_to_html(q.text)}
+
+    @staticmethod
+    def start_final_round():
+        """Enter Final Jeopardy: reveal the category, open wagers, keep the
+        question itself hidden until reveal_final_question()."""
+        if not Controller.is_final_question():
+            raise GameProblem("No final question configured for this round")
+        game = Game.query.one()
+        if game.state != GameState.in_round:
+            raise GameProblem("Trying to start Final Jeopardy when no round is in progress")
+        game.state = GameState.in_final
+        db.session.commit()
+        Controller.set_state("final", "wager")
+        Controller.set_state("final-wagers", "{}")
+        return True
+
+    @staticmethod
+    def get_final_wager_range(tid):
+        """A team may wager anywhere from 0 up to its current score (teams
+        at 0 or below can only wager 0, same rule as broadcast Jeopardy).
+
+        Note: get_teams_score_by_tid() only has entries for teams with at
+        least one Answer row, so a team with no answers yet must be checked
+        against Team directly rather than assumed absent == unknown.
+        """
+        if Team.query.filter(Team.tid == tid).one_or_none() is None:
+            raise UnknownTeamError(f"Unknown team {tid!r}")
+        score = Controller.get_teams_score_by_tid().get(tid, 0)
+        return (0, max(score, 0))
+
+    @staticmethod
+    def set_final_wager(tid, amount):
+        _min, _max = Controller.get_final_wager_range(tid)
+        if not (_min <= amount <= _max):
+            raise GameProblem(f"Wager {amount} outside [{_min}, {_max}] for {tid}")
+        wagers = Controller.get_final_wagers()
+        wagers[tid] = amount
+        Controller.set_state("final-wagers", json.dumps(wagers))
+        return tid, amount
+
+    @staticmethod
+    def get_final_wagers():
+        """{tid: amount} of wagers submitted so far this final question."""
+        return json.loads(Controller.get_state("final-wagers") or "{}")
+
+    @staticmethod
+    def reveal_final_question():
+        game = Game.query.one()
+        if game.state != GameState.in_final:
+            raise GameProblem("Final Jeopardy is not in progress")
+        Controller.set_state("final", "revealed")
+        return True
+
+    @staticmethod
+    def get_final_judged_teams():
+        """tids already scored for this round's final question."""
+        question = Controller.get_final_question()
+        if question is None:
+            return []
+        return [a.team.tid for a in Answer.query.filter(Answer.question_id == question.id).all()]
+
+    @staticmethod
+    def answer_final(tid, correct):
+        """Judge one team's Final Jeopardy answer using their stored wager."""
+        game = Game.query.one()
+        if game.state != GameState.in_final:
+            raise GameProblem("Final Jeopardy is not in progress")
+        question = Controller.get_final_question()
+        if question is None:
+            raise GameProblem("No final question configured for this round")
+        wagers = Controller.get_final_wagers()
+        if tid not in wagers:
+            raise GameProblem(f"No wager submitted for {tid}")
+        team = Team.query.filter(Team.tid == tid).one()
+
+        # Replace any previous judgment for this team (host correcting a
+        # misclick), same pattern as answer_dailydouble.
+        Answer.query.filter(Answer.question_id == question.id, Answer.team_id == team.id).delete()
+
+        response = Response.good if correct else Response.bad
+        answer = Answer(response, team, question)
+        answer.score_attributed = wagers[tid]
+        db.session.add(answer)
+        db.session.commit()
+        return True
+
+    @staticmethod
+    def end_final() -> None:
+        """Turn Final Jeopardy off. Use everywhere it ends (finish, next round)."""
+        Controller.set_state("final", "")
+        Controller.set_state("final-wagers", "{}")
+
+    @staticmethod
+    def cancel_final_round():
+        """Back out of Final Jeopardy without ending the game -- e.g. started
+        it by mistake, or resuming after a restart and want to bail. Any
+        teams already judged keep their score; re-starting Final Jeopardy
+        later lets the host re-judge them if needed."""
+        game = Game.query.one()
+        if game.state != GameState.in_final:
+            raise GameProblem("Final Jeopardy is not in progress")
+        game.state = GameState.in_round
+        db.session.commit()
+        Controller.end_final()
+        return True
 
     @staticmethod
     def get_answer(column, row):
         app.logger.info("Answer requested for row: {} and col: {}".format(row, column))
 
-        condition = and_(Question.row == row, Question.col == column)
+        condition = and_(
+            Question.row == row,
+            Question.col == column,
+            Question.round == Controller.get_current_round(),
+        )
         _q = Question.query.filter(condition).one()
         _a = Answer.query.filter(Answer.question_id == _q.id).all()
         if len(_a) == 0:
@@ -395,7 +633,11 @@ class Controller:
         app.logger.info("Answers submitted for question ({}, {}): {}".format(column, row, answers))
         # Answers looks like: ('team1', '-1'), ('team2', '1'), ('team3', '0')]
 
-        condition = and_(Question.row == row, Question.col == column)
+        condition = and_(
+            Question.row == row,
+            Question.col == column,
+            Question.round == Controller.get_current_round(),
+        )
         _q = Question.query.filter(condition).one()
 
         # Is there already an answer? If so update answers
@@ -424,7 +666,11 @@ class Controller:
             )
         )
 
-        condition = and_(Question.row == row, Question.col == column)
+        condition = and_(
+            Question.row == row,
+            Question.col == column,
+            Question.round == Controller.get_current_round(),
+        )
         _q = Question.query.filter(condition).one()
 
         # Delete existing answers
@@ -442,8 +688,13 @@ class Controller:
 
     @staticmethod
     def _get_questions_status():
-        """Full status about all questions"""
-        questions = db.session.query(Question.row, Question.col, Answer).outerjoin(Answer).all()
+        """Full status about all questions on the current round's board"""
+        questions = (
+            db.session.query(Question.row, Question.col, Answer)
+            .outerjoin(Answer)
+            .filter(Question.round == Controller.get_current_round())
+            .all()
+        )
         return questions
 
     @staticmethod

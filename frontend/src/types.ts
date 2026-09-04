@@ -17,8 +17,11 @@ export type QuestionsMap = Record<string, QuestionState>;
 
 export interface AppConfig {
   NB_TEAMS?: number;
+  MIN_TEAMS?: number;
+  MAX_TEAMS?: number;
   VARIABLE_TEAMS?: boolean;
   CATEGORIES_PER_GAME?: number;
+  MAX_ROUNDS?: number;
   QUESTIONS_PER_CATEGORY?: number;
   SCORE_TICK?: number;
   DAILYDOUBLE_WAIGER_MIN?: number;
@@ -44,6 +47,11 @@ export interface ActiveQuestion {
   text?: string;
   category?: string;
   dailydouble?: boolean;
+  // Jeopardy-style "correct question" for this clue (e.g. "What is
+  // Paris?"). has_correct_response says whether one exists at all;
+  // correct_response only shows up once the host reveals it.
+  has_correct_response?: boolean;
+  correct_response?: string;
 }
 
 export interface Range {
@@ -62,10 +70,22 @@ export interface ServerMessage {
   text?: string;
 }
 
+// Final Jeopardy status. null when this round has no final question at all.
+// Wager amounts are intentionally never included -- they only ever become
+// visible (as a score change) once the host judges a team.
+export interface FinalState {
+  active: boolean;
+  stage: "wager" | "revealed" | null;
+  category?: string | null;
+  wagered: string[];
+  judged: string[];
+}
+
 // /api/v1/state payload (and the equivalent on the "state" socket event).
 export interface ServerState {
   config?: AppConfig;
   game_state?: GameState;
+  round?: number;
   teams?: Team[];
   categories?: string[];
   questions?: QuestionsMap;
@@ -74,6 +94,7 @@ export interface ServerState {
   messages?: ServerMessage[];
   dailydouble_range?: Range;
   dailydouble_wager?: DailyDoubleWager | null;
+  final?: FinalState | null;
 }
 
 // Socket event payloads (one per `s.on("...")` subscription in the store).
@@ -154,6 +175,7 @@ export interface SelectQuestionResponse {
 
 export interface InitPayload {
   action: "new" | string;
+  nb_teams?: number;
   [key: string]: unknown;
 }
 

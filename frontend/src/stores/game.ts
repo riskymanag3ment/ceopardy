@@ -13,6 +13,7 @@ import type {
   DailyDoubleRevealEvent,
   DailyDoubleWager,
   DailyDoubleWagerEvent,
+  FinalState,
   GameState,
   OverlayBigEvent,
   QuestionShowEvent,
@@ -36,6 +37,7 @@ interface GameStoreState {
   initialized: boolean;
   config: AppConfig;
   game_state: GameState;
+  round: number;
   teams: Team[];
   categories: string[];
   questions: QuestionsMap;
@@ -44,6 +46,7 @@ interface GameStoreState {
   messages: ServerMessage[];
   dailydouble_range: Range;
   dailydouble_wager: DailyDoubleWager | null;
+  final: FinalState | null;
   // Incremented every time the server fires a new daily-double. Lets the
   // viewer trigger the flip animation without watching for state changes
   // that might bounce during reconnects.
@@ -61,6 +64,7 @@ export const useGameStore = defineStore("game", {
     initialized: false,
     config: {}, // populated from /api/v1/state on connect
     game_state: "uninitialized",
+    round: 1,
     teams: [], // [{tid, name, score}]
     categories: [], // ['Cat1', ...]
     questions: {}, // { c1q1: { answered: bool, team_scores: {team1: 100} } }
@@ -81,6 +85,7 @@ export const useGameStore = defineStore("game", {
     // {team, amount} as the host moves the wager slider during a DD; null
     // outside DD or before the operator has set anything.
     dailydouble_wager: null,
+    final: null,
     dailydoubleTrigger: 0,
     socket: null,
     rouletteTarget: null,
@@ -126,6 +131,7 @@ export const useGameStore = defineStore("game", {
     applyServerState(data: ServerState): void {
       if (data.config) this.config = { ...this.config, ...data.config };
       if (data.game_state) this.game_state = data.game_state;
+      if (data.round) this.round = data.round;
       if (data.teams) this.teams = data.teams;
       if (data.categories) this.categories = data.categories;
       if (data.questions) this.questions = data.questions;
@@ -141,6 +147,7 @@ export const useGameStore = defineStore("game", {
         this.dailydouble_range = data.dailydouble_range;
       if (data.dailydouble_wager !== undefined)
         this.dailydouble_wager = data.dailydouble_wager;
+      if (data.final !== undefined) this.final = data.final;
     },
 
     connectSocket(): void {

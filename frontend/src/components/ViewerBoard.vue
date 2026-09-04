@@ -26,7 +26,7 @@ function isAnswered(col: number, row: number): boolean {
 }
 
 function questionLabel(row: number): string {
-  return `$${row * game.scoreTick}`;
+  return `$${row * game.scoreTick * game.round}`;
 }
 </script>
 

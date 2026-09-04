@@ -12,7 +12,13 @@ const visible = computed(
     !!game.activeQuestionId &&
     (!game.isDailyDouble || game.isDailyDoubleRevealed),
 );
-const html = computed(() => game.active_question?.text ?? "");
+const html = computed(() => {
+  let out = game.active_question?.text ?? "";
+  if (game.active_question?.correct_response) {
+    out += `<hr/>${game.active_question.correct_response}`;
+  }
+  return out;
+});
 </script>
 
 <template>

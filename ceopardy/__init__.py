@@ -29,12 +29,13 @@ For development run Flask (`python run.py`) and Vite (`npm run dev`)
 side by side. Vite proxies /api and /socket.io to Flask.
 """
 
+import hmac
 import logging
 import os
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 
-from flask import Flask, g, jsonify, send_from_directory
+from flask import Flask, Response, g, jsonify, request, send_from_directory
 from flask_socketio import SocketIO
 from flask_sqlalchemy import SQLAlchemy
 
@@ -133,6 +134,39 @@ def serve_game_media(filename):
 @app.route("/api/v1/version")
 def version():
     return jsonify(version=VERSION)
+
+
+# ---------------------------------------------------------------------------
+# Host UI protection
+# ---------------------------------------------------------------------------
+# Optional password gate for the host interface and the mutating (POST)
+# API endpoints it drives. The viewer/crowd-facing pages and the read-only
+# GET endpoints they need stay open. Set CEOPARDY_HOST_PASSWORD to enable.
+# The username is not checked -- browsers require one for a Basic Auth
+# prompt, but only the password is meaningful here.
+HOST_PASSWORD = os.environ.get("CEOPARDY_HOST_PASSWORD")
+
+
+def _host_auth_required():
+    if request.path == "/host":
+        return True
+    return request.path.startswith("/api/v1/") and request.method == "POST"
+
+
+@app.before_request
+def _require_host_password():
+    if not HOST_PASSWORD:
+        return None
+    if not _host_auth_required():
+        return None
+    auth = request.authorization
+    if not auth or not hmac.compare_digest(auth.password or "", HOST_PASSWORD):
+        return Response(
+            "Authentication required to access the host interface.",
+            401,
+            {"WWW-Authenticate": 'Basic realm="Ceopardy Host"'},
+        )
+    return None
 
 
 # ---------------------------------------------------------------------------

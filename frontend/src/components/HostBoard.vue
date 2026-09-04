@@ -93,7 +93,7 @@ function onClick(col: number, row: number): void {
                 </div>
               </div>
               <div class="box-question-right">
-                <p>${{ row * game.scoreTick }}</p>
+                <p>${{ row * game.scoreTick * game.round }}</p>
               </div>
             </div>
           </div>

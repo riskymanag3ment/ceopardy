@@ -173,6 +173,9 @@ export interface SelectQuestionResponse {
   dailydouble?: boolean;
   dailydouble_range?: Range;
   team?: string;
+  // Host-only: sent in this direct response so the host always knows the
+  // answer, but never broadcast to the shared /game socket room.
+  correct_response?: string;
 }
 
 export interface InitPayload {

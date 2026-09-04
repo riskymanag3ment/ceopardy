@@ -402,6 +402,64 @@ svg:hover polygon {
   background-color: #000181;
 }
 
+/* Small icon-only reveal control (bottom-right of the clue preview box),
+   for revealing a clue's answer to everyone -- same gold-on-blue family as
+   .dd-reveal-btn, just circular and unobtrusive instead of a full button. */
+.eye-reveal-icon {
+  position: absolute;
+  bottom: calc(var(--ceopardy-pad) * 1.5);
+  right: calc(var(--ceopardy-pad) * 1.5);
+  width: 2.4rem;
+  height: 2.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #0001a1;
+  color: var(--ceopardy-gold);
+  border: 2px solid var(--ceopardy-gold);
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1.1rem;
+}
+.eye-reveal-icon:hover {
+  background-color: #000181;
+}
+
+/* Host-only clue+answer layout: the clue keeps the normal big clue
+   treatment (inherited from .box-question-host p); the answer gets its
+   own clearly-separated, smaller, plain-white block so the two are easy
+   to tell apart at a glance instead of running together. */
+.host-clue-answer-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--ceopardy-pad) * 1.5);
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  justify-content: center;
+}
+.host-answer-block {
+  background-color: #000181;
+  border-radius: 0.3rem;
+  padding: calc(var(--ceopardy-pad)) calc(var(--ceopardy-pad) * 1.5);
+}
+.host-answer-label {
+  display: block;
+  color: #4caf50;
+  font-size: 0.75rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+.box-question-host .host-answer-block p {
+  color: #ffffff;
+  text-shadow: none;
+  font-size: 1.1rem;
+  line-height: 130%;
+  margin: 0;
+}
+
 /* Shared gold-on-blue input, same family as .dd-reveal-btn -- used for the
    Daily Double and Final Jeopardy waiger number boxes. */
 .ceopardy-input {
